@@ -27,6 +27,7 @@ from huey.storage import MemoryStorage
 from huey.storage import PriorityRedisExpireStorage
 from huey.storage import PriorityRedisStorage
 from huey.storage import RedisExpireStorage
+from huey.storage import QueueRedisStorage
 from huey.storage import RedisStorage
 from huey.storage import SqliteStorage
 from huey.utils import Error
@@ -152,7 +153,7 @@ class Huey(object):
     def create_consumer(self, **options):
         return Consumer(self, **options)
 
-    def task(self, retries=0, retry_delay=0, priority=None, context=False,
+    def task(self, retries=0, retry_delay=0, priority=None, queue=None, context=False,
              name=None, **kwargs):
         def decorator(func):
             return TaskWrapper(
@@ -161,6 +162,7 @@ class Huey(object):
                 retries=retries,
                 retry_delay=retry_delay,
                 default_priority=priority,
+                queue=queue,
                 context=context,
                 name=name,
                 **kwargs)
@@ -263,7 +265,7 @@ class Huey(object):
         if self._immediate:
             self.execute(task)
         else:
-            self.storage.enqueue(self.serialize_task(task), task.priority)
+            self.storage.enqueue(self.serialize_task(task), task.priority, task.queue)
 
         if not self.results:
             return
@@ -1009,3 +1011,4 @@ RedisExpireHuey = partial(Huey, storage_class=RedisExpireStorage)
 PriorityRedisHuey = partial(Huey, storage_class=PriorityRedisStorage)
 PriorityRedisExpireHuey = partial(Huey,
                                   storage_class=PriorityRedisExpireStorage)
+QueueRedisHuey = partial(Huey, storage_class=QueueRedisStorage)

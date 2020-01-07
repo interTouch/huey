@@ -9,6 +9,7 @@ from huey.api import PriorityRedisExpireHuey
 from huey.api import PriorityRedisHuey
 from huey.api import RedisExpireHuey
 from huey.api import RedisHuey
+from huey.api import QueueRedisHuey
 from huey.api import SqliteHuey
 from huey.api import crontab
 from huey.exceptions import CancelExecution

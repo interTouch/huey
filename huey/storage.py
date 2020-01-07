@@ -50,7 +50,7 @@ class BaseStorage(object):
         """
         pass
 
-    def enqueue(self, data, priority=None):
+    def enqueue(self, data, priority=None, queue=None):
         """
         Given an opaque chunk of data, add it to the queue.
 
@@ -240,7 +240,7 @@ class BaseStorage(object):
 
 
 class BlackHoleStorage(BaseStorage):
-    def enqueue(self, data, priority=None): pass
+    def enqueue(self, data, priority=None, queue=None): pass
     def dequeue(self): pass
     def queue_size(self): return 0
     def enqueued_items(self, limit=None): return []
@@ -268,7 +268,7 @@ class MemoryStorage(BaseStorage):
         self._schedule = []
         self._lock = threading.RLock()
 
-    def enqueue(self, data, priority=None):
+    def enqueue(self, data, priority=None, queue=None):
         with self._lock:
             self._c += 1
             priority = 0 if priority is None else -priority
@@ -409,7 +409,7 @@ class RedisStorage(BaseStorage):
     def convert_ts(self, ts):
         return time.mktime(ts.timetuple()) + (ts.microsecond * 1e-6)
 
-    def enqueue(self, data, priority=None):
+    def enqueue(self, data, priority=None, queue=None):
         if priority:
             raise NotImplementedError('Task priorities are not supported by '
                                       'this storage.')
@@ -555,7 +555,7 @@ class RedisExpireStorage(RedisStorage):
 class RedisPriorityQueue(object):
     priority = True
 
-    def enqueue(self, data, priority=None):
+    def enqueue(self, data, priority=None, queue=None):
         priority = 0 if priority is None else -priority
         # Prefix the message with an encoded timestamp to ensure that messages
         # created with the same priority are stored in the correct order. Since
@@ -592,10 +592,43 @@ class RedisPriorityQueue(object):
         return [item[8:] for item in items]  # Unprefix the data.
 
 
+class RedisQueue(object):
+
+    def get_queue(self, queue):
+        key = self.queue_key
+        if queue:
+            key = '{}.{}'.format(key, queue)
+        return key
+
+    def enqueue(self, data, priority=None, queue=None):
+        if priority:
+            raise NotImplementedError('Task priorities are not supported by '
+                                      'this storage.')
+        queue = self.get_queue(queue)
+        self.conn.lpush(queue, data)
+
+    def dequeue(self, queue=None):
+        queue = self.get_queue(queue)
+        if self.blocking:
+            try:
+                return self.conn.brpop(
+                    queue,
+                    timeout=self.read_timeout)[1]
+            except (ConnectionError, TypeError, IndexError):
+                # Unfortunately, there is no way to differentiate a socket
+                # timing out and a host being unreachable.
+                return None
+        else:
+            return self.conn.rpop(queue)
+
+
 class PriorityRedisStorage(RedisPriorityQueue, RedisStorage): pass
 
 
 class PriorityRedisExpireStorage(RedisPriorityQueue, RedisExpireStorage): pass
+
+
+class QueueRedisStorage(RedisQueue, RedisStorage): pass
 
 
 class _ConnectionState(object):
@@ -704,7 +737,7 @@ class SqliteStorage(BaseSqlStorage):
         conn.execute('pragma synchronous=%s' % (2 if self._fsync else 0))
         return conn
 
-    def enqueue(self, data, priority=None):
+    def enqueue(self, data, priority=None, queue=None):
         self.sql('insert into task (queue, data, priority) values (?, ?, ?)',
                  (self.name, to_blob(data), priority or 0), commit=True)
 
